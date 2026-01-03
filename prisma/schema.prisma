@@ -1,0 +1,1890 @@
+// prisma/schema.prisma
+// Sistema Integral LCidiomas - Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE: USUARIOS Y AUTENTICACIÓN
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  phone         String?
+  avatar        String?
+  role          UserRole
+  status        UserStatus @default(ACTIVE)
+  sedeId        String?
+  sede          Sede?     @relation(fields: [sedeId], references: [id])
+
+  // Relaciones específicas por rol
+  empleado      Empleado?
+  profesor      Profesor?
+  alumno        Alumno?
+
+  // Actividad
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  // MicroSlack
+  messages      SlackMessage[]
+  channels      SlackChannelMember[]
+  directMessagesSent     DirectMessage[] @relation("sender")
+  directMessagesReceived DirectMessage[] @relation("receiver")
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  DIRECTOR
+  COORDINADOR_ACADEMICO
+  PROFESOR
+  COMERCIAL
+  ADMINISTRATIVO
+  ATENCION_CLIENTE
+  IT
+  RRHH
+  ALUMNO
+  FAMILIAR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  token        String   @unique
+  expiresAt    DateTime
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+}
+
+// ============================================
+// ORGANIZACIÓN: SEDES Y ESTRUCTURA
+// ============================================
+
+model Sede {
+  id          String   @id @default(cuid())
+  nombre      String
+  codigo      String   @unique
+  direccion   String
+  ciudad      String
+  provincia   String
+  codigoPostal String
+  telefono    String
+  email       String
+  horarioApertura String
+  horarioCierre   String
+  activa      Boolean  @default(true)
+
+  // Relaciones
+  users       User[]
+  aulas       Aula[]
+  grupos      Grupo[]
+  empleados   Empleado[]
+  matriculas  Matricula[]
+  facturas    Factura[]
+  inventario  InventarioItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Aula {
+  id          String   @id @default(cuid())
+  sedeId      String
+  sede        Sede     @relation(fields: [sedeId], references: [id])
+  nombre      String
+  codigo      String
+  capacidad   Int
+  equipamiento String[]
+  tipo        TipoAula
+  activa      Boolean  @default(true)
+
+  clases      Clase[]
+  reservas    ReservaAula[]
+
+  @@unique([sedeId, codigo])
+}
+
+enum TipoAula {
+  STANDARD
+  MULTIMEDIA
+  LABORATORIO
+  SALA_REUNIONES
+  SALA_EXAMENES
+}
+
+// ============================================
+// MÓDULO COMERCIAL
+// ============================================
+
+model Lead {
+  id              String      @id @default(cuid())
+  nombre          String
+  apellidos       String
+  email           String
+  telefono        String?
+  empresa         String?
+
+  // Segmentación
+  segmento        SegmentoLead
+  origen          OrigenLead
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+
+  // Pipeline
+  estado          EstadoLead  @default(NUEVO)
+  score           Int         @default(0)
+  temperatura     Temperatura @default(FRIO)
+  valorEstimado   Decimal?    @db.Decimal(10, 2)
+
+  // Asignación
+  comercialId     String?
+  comercial       Empleado?   @relation("LeadComercial", fields: [comercialId], references: [id])
+
+  // Test de nivel
+  testNivelId     String?
+  testNivel       TestNivel?  @relation(fields: [testNivelId], references: [id])
+  nivelDetectado  NivelIdioma?
+
+  // Interés
+  idiomaInteres   String?
+  cursoInteres    String?
+  horarioPreferido String?
+  objetivos       String?
+
+  // Seguimiento
+  proximoContacto DateTime?
+  notas           String?
+
+  // Conversión
+  convertidoEn    DateTime?
+  alumnoId        String?
+  alumno          Alumno?     @relation(fields: [alumnoId], references: [id])
+
+  // Historial
+  interacciones   LeadInteraccion[]
+  propuestas      Propuesta[]
+  tareas          TareaComercial[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([estado, comercialId])
+  @@index([score])
+}
+
+enum SegmentoLead {
+  ADULTO_PARTICULAR
+  NINO_PARTICULAR
+  EMPRESA
+  COLEGIO
+  ERASMUS
+  CAMPAMENTO
+}
+
+enum OrigenLead {
+  WEB_ORGANICO
+  GOOGLE_ADS
+  META_ADS
+  REFERIDO
+  LLAMADA_ENTRANTE
+  VISITA_PRESENCIAL
+  EVENTO
+  COLEGIO
+  EMPRESA
+  OTRO
+}
+
+enum EstadoLead {
+  NUEVO
+  CONTACTADO
+  TEST_REALIZADO
+  PROPUESTA_ENVIADA
+  NEGOCIACION
+  ACEPTADO
+  MATRICULADO
+  PERDIDO
+  NO_CUALIFICADO
+}
+
+enum Temperatura {
+  FRIO
+  TIBIO
+  CALIENTE
+  MUY_CALIENTE
+}
+
+model LeadInteraccion {
+  id          String          @id @default(cuid())
+  leadId      String
+  lead        Lead            @relation(fields: [leadId], references: [id])
+  tipo        TipoInteraccion
+  canal       CanalInteraccion
+  descripcion String
+  resultado   String?
+  empleadoId  String?
+  empleado    Empleado?       @relation(fields: [empleadoId], references: [id])
+  agenteIA    Boolean         @default(false)
+
+  createdAt   DateTime        @default(now())
+}
+
+enum TipoInteraccion {
+  LLAMADA
+  EMAIL
+  WHATSAPP
+  CHAT
+  REUNION
+  VISITA
+  TEST_NIVEL
+  PROPUESTA
+  SEGUIMIENTO
+}
+
+enum CanalInteraccion {
+  TELEFONO
+  EMAIL
+  WHATSAPP
+  WEB_CHAT
+  PRESENCIAL
+  VIDEO
+}
+
+model Propuesta {
+  id              String          @id @default(cuid())
+  codigo          String          @unique
+  leadId          String
+  lead            Lead            @relation(fields: [leadId], references: [id])
+
+  // Contenido
+  tipo            TipoPropuesta
+  cursos          PropuestaCurso[]
+  subtotal        Decimal         @db.Decimal(10, 2)
+  descuento       Decimal         @default(0) @db.Decimal(10, 2)
+  total           Decimal         @db.Decimal(10, 2)
+
+  // Estado
+  estado          EstadoPropuesta @default(BORRADOR)
+  validezHasta    DateTime
+
+  // Documentos
+  pdfUrl          String?
+  firmadaUrl      String?
+
+  comercialId     String
+  comercial       Empleado        @relation(fields: [comercialId], references: [id])
+
+  aceptadaEn      DateTime?
+  rechazadaEn     DateTime?
+  motivoRechazo   String?
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+enum TipoPropuesta {
+  PARTICULAR
+  EMPRESA
+  COLEGIO
+  GRUPO
+}
+
+enum EstadoPropuesta {
+  BORRADOR
+  ENVIADA
+  VISTA
+  ACEPTADA
+  RECHAZADA
+  EXPIRADA
+}
+
+model PropuestaCurso {
+  id          String    @id @default(cuid())
+  propuestaId String
+  propuesta   Propuesta @relation(fields: [propuestaId], references: [id])
+  cursoId     String
+  curso       Curso     @relation(fields: [cursoId], references: [id])
+  cantidad    Int       @default(1)
+  precioUnit  Decimal   @db.Decimal(10, 2)
+  descuento   Decimal   @default(0) @db.Decimal(5, 2)
+}
+
+model TareaComercial {
+  id          String        @id @default(cuid())
+  leadId      String?
+  lead        Lead?         @relation(fields: [leadId], references: [id])
+  tipo        TipoTareaComercial
+  titulo      String
+  descripcion String?
+  prioridad   Prioridad     @default(MEDIA)
+  fechaVencimiento DateTime?
+  completada  Boolean       @default(false)
+  completadaEn DateTime?
+
+  asignadoId  String
+  asignado    Empleado      @relation(fields: [asignadoId], references: [id])
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+enum TipoTareaComercial {
+  LLAMAR
+  ENVIAR_EMAIL
+  ENVIAR_PROPUESTA
+  SEGUIMIENTO
+  REUNION
+  OTRO
+}
+
+enum Prioridad {
+  BAJA
+  MEDIA
+  ALTA
+  URGENTE
+}
+
+// ============================================
+// CAMPAÑAS Y MARKETING
+// ============================================
+
+model Campana {
+  id              String          @id @default(cuid())
+  nombre          String
+  tipo            TipoCampana
+  estado          EstadoCampana   @default(BORRADOR)
+
+  // Configuración
+  fechaInicio     DateTime
+  fechaFin        DateTime?
+  presupuesto     Decimal?        @db.Decimal(10, 2)
+  objetivoLeads   Int?
+
+  // Segmentación
+  segmentos       SegmentoLead[]
+
+  // Canales
+  canales         CanalCampana[]
+
+  // Resultados
+  leads           Int             @default(0)
+  conversiones    Int             @default(0)
+  gastado         Decimal         @default(0) @db.Decimal(10, 2)
+  roi             Decimal?        @db.Decimal(5, 2)
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+enum TipoCampana {
+  CAPTACION
+  REMARKETING
+  FIDELIZACION
+  RENOVACION
+  EVENTO
+  CAMPAMENTO
+}
+
+enum EstadoCampana {
+  BORRADOR
+  PROGRAMADA
+  ACTIVA
+  PAUSADA
+  FINALIZADA
+}
+
+enum CanalCampana {
+  GOOGLE_ADS
+  META_ADS
+  EMAIL
+  SMS
+  WHATSAPP
+  RRSS_ORGANICO
+}
+
+model ConvenioColegio {
+  id              String      @id @default(cuid())
+  colegioNombre   String
+  colegioNIF      String
+  direccion       String
+  contactoNombre  String
+  contactoEmail   String
+  contactoTelefono String
+
+  // Condiciones
+  descuentoPorcentaje Decimal @db.Decimal(5, 2)
+  comision        Decimal     @db.Decimal(5, 2)
+  condiciones     String?
+
+  // Vigencia
+  fechaInicio     DateTime
+  fechaFin        DateTime
+  renovacionAuto  Boolean     @default(false)
+  estado          EstadoConvenio @default(ACTIVO)
+
+  // Documentos
+  convenioUrl     String?
+
+  alumnos         Alumno[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+enum EstadoConvenio {
+  NEGOCIACION
+  ACTIVO
+  RENOVACION
+  FINALIZADO
+}
+
+// ============================================
+// MÓDULO ACADÉMICO
+// ============================================
+
+model Alumno {
+  id              String      @id @default(cuid())
+
+  // Usuario vinculado
+  userId          String      @unique
+  user            User        @relation(fields: [userId], references: [id])
+
+  // Datos académicos
+  codigo          String      @unique
+  nivelActual     NivelIdioma?
+  idiomasPrincipal String[]
+
+  // Datos personales adicionales
+  fechaNacimiento DateTime?
+  nacionalidad    String?
+  documentoTipo   TipoDocumento?
+  documentoNumero String?
+
+  // Menor de edad
+  esMenor         Boolean     @default(false)
+  tutorNombre     String?
+  tutorTelefono   String?
+  tutorEmail      String?
+  tutorRelacion   String?
+
+  // Convenio
+  convenioId      String?
+  convenio        ConvenioColegio? @relation(fields: [convenioId], references: [id])
+
+  // Empresa (para In-Company)
+  empresaId       String?
+  empresa         Empresa?    @relation(fields: [empresaId], references: [id])
+
+  // Relaciones académicas
+  matriculas      Matricula[]
+  grupoAlumnos    GrupoAlumno[]
+  asistencias     Asistencia[]
+  evaluaciones    Evaluacion[]
+  testsNivel      TestNivel[]
+  certificados    Certificado[]
+
+  // CRM
+  leads           Lead[]
+  facturas        Factura[]
+  pagos           Pago[]
+
+  // Satisfacción
+  encuestas       EncuestaRespuesta[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+enum NivelIdioma {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+}
+
+enum TipoDocumento {
+  DNI
+  NIE
+  PASAPORTE
+  OTRO
+}
+
+model Profesor {
+  id              String      @id @default(cuid())
+
+  // Usuario vinculado
+  userId          String      @unique
+  user            User        @relation(fields: [userId], references: [id])
+
+  // Datos profesionales
+  codigo          String      @unique
+  especialidades  String[]
+  idiomas         String[]
+  certificaciones String[]
+  biografia       String?
+
+  // Disponibilidad
+  disponibilidad  DisponibilidadProfesor[]
+
+  // Asignaciones
+  grupos          Grupo[]
+  clases          Clase[]
+  sustituciones   Sustitucion[]
+
+  // Evaluaciones
+  evaluacionesRealizadas Evaluacion[]
+
+  // Desempeño
+  evaluacionesDesempeno EvaluacionDesempeno[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model DisponibilidadProfesor {
+  id          String    @id @default(cuid())
+  profesorId  String
+  profesor    Profesor  @relation(fields: [profesorId], references: [id])
+  diaSemana   Int       // 0-6
+  horaInicio  String    // "09:00"
+  horaFin     String    // "21:00"
+
+  @@unique([profesorId, diaSemana])
+}
+
+model Curso {
+  id              String      @id @default(cuid())
+  codigo          String      @unique
+  nombre          String
+  descripcion     String?
+  idioma          String
+  nivel           NivelIdioma
+
+  // Configuración
+  duracionHoras   Int
+  sesiones        Int
+  minAlumnos      Int         @default(4)
+  maxAlumnos      Int         @default(12)
+
+  // Precios
+  precioParticular Decimal    @db.Decimal(10, 2)
+  precioEmpresa   Decimal     @db.Decimal(10, 2)
+  precioColegio   Decimal     @db.Decimal(10, 2)
+
+  // Syllabus
+  syllabus        String?
+  materialesIncluidos String[]
+
+  // Certificación
+  preparaExamen   Boolean     @default(false)
+  examenOficial   String?
+
+  // Estado
+  activo          Boolean     @default(true)
+
+  grupos          Grupo[]
+  propuestas      PropuestaCurso[]
+  matriculas      Matricula[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model Grupo {
+  id              String      @id @default(cuid())
+  codigo          String      @unique
+  nombre          String
+
+  // Relaciones
+  cursoId         String
+  curso           Curso       @relation(fields: [cursoId], references: [id])
+  sedeId          String
+  sede            Sede        @relation(fields: [sedeId], references: [id])
+  profesorId      String?
+  profesor        Profesor?   @relation(fields: [profesorId], references: [id])
+
+  // Configuración
+  tipo            TipoGrupo
+  modalidad       Modalidad
+
+  // Horario
+  horaInicio      String
+  horaFin         String
+  diasSemana      Int[]       // [1, 3, 5] para L-M-V
+
+  // Fechas
+  fechaInicio     DateTime
+  fechaFin        DateTime
+
+  // Estado
+  estado          EstadoGrupo @default(ABIERTO)
+  plazasOcupadas  Int         @default(0)
+
+  // Alumnos
+  alumnos         GrupoAlumno[]
+
+  // Clases
+  clases          Clase[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([estado, sedeId])
+}
+
+enum TipoGrupo {
+  REGULAR
+  INTENSIVO
+  EMPRESA
+  EXTRAESCOLAR
+  CAMPAMENTO
+  PARTICULAR
+}
+
+enum Modalidad {
+  PRESENCIAL
+  ONLINE
+  HIBRIDO
+}
+
+enum EstadoGrupo {
+  ABIERTO
+  EN_CURSO
+  COMPLETO
+  FINALIZADO
+  CANCELADO
+}
+
+model GrupoAlumno {
+  id          String      @id @default(cuid())
+  grupoId     String
+  grupo       Grupo       @relation(fields: [grupoId], references: [id])
+  alumnoId    String
+  alumno      Alumno      @relation(fields: [alumnoId], references: [id])
+
+  fechaAlta   DateTime    @default(now())
+  fechaBaja   DateTime?
+  motivoBaja  String?
+  estado      EstadoGrupoAlumno @default(ACTIVO)
+
+  @@unique([grupoId, alumnoId])
+}
+
+enum EstadoGrupoAlumno {
+  ACTIVO
+  BAJA
+  SUSPENDIDO
+  COMPLETADO
+}
+
+model Clase {
+  id              String      @id @default(cuid())
+  grupoId         String
+  grupo           Grupo       @relation(fields: [grupoId], references: [id])
+  profesorId      String
+  profesor        Profesor    @relation(fields: [profesorId], references: [id])
+  aulaId          String?
+  aula            Aula?       @relation(fields: [aulaId], references: [id])
+
+  // Fecha y hora
+  fecha           DateTime
+  horaInicio      String
+  horaFin         String
+  duracionMinutos Int
+
+  // Estado
+  estado          EstadoClase @default(PROGRAMADA)
+
+  // Contenido
+  tema            String?
+  contenidoPlanificado String?
+  contenidoImpartido   String?
+  tareasAsignadas      String?
+  notas           String?
+
+  // Asistencias
+  asistencias     Asistencia[]
+
+  // Sustitución
+  sustitucion     Sustitucion?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([fecha, grupoId])
+}
+
+enum EstadoClase {
+  PROGRAMADA
+  EN_CURSO
+  COMPLETADA
+  CANCELADA
+  SUSTITUIDA
+}
+
+model Asistencia {
+  id          String          @id @default(cuid())
+  claseId     String
+  clase       Clase           @relation(fields: [claseId], references: [id])
+  alumnoId    String
+  alumno      Alumno          @relation(fields: [alumnoId], references: [id])
+
+  estado      EstadoAsistencia
+  horaEntrada DateTime?
+  horaSalida  DateTime?
+  notas       String?
+
+  // Notificación a familia
+  notificado  Boolean         @default(false)
+  notificadoA String?
+
+  createdAt   DateTime        @default(now())
+
+  @@unique([claseId, alumnoId])
+}
+
+enum EstadoAsistencia {
+  PRESENTE
+  AUSENTE
+  JUSTIFICADO
+  TARDE
+}
+
+model Sustitucion {
+  id              String    @id @default(cuid())
+  claseId         String    @unique
+  clase           Clase     @relation(fields: [claseId], references: [id])
+  profesorOriginalId String
+  profesorSustitutoId String
+  profesorSustituto Profesor @relation(fields: [profesorSustitutoId], references: [id])
+  motivo          String
+  aprobada        Boolean   @default(false)
+  aprobadaPor     String?
+
+  createdAt       DateTime  @default(now())
+}
+
+model TestNivel {
+  id              String      @id @default(cuid())
+  alumnoId        String?
+  alumno          Alumno?     @relation(fields: [alumnoId], references: [id])
+
+  // Datos del test
+  idioma          String
+  tipo            TipoTestNivel
+
+  // Resultados
+  estado          EstadoTest  @default(PENDIENTE)
+  fechaRealizacion DateTime?
+
+  // Puntuaciones
+  puntajeGrammar  Int?
+  puntajeVocabulary Int?
+  puntajeReading  Int?
+  puntajeListening Int?
+  puntajeWriting  Int?
+  puntajeSpeaking Int?
+  puntajeTotal    Int?
+
+  // Resultado
+  nivelResultado  NivelIdioma?
+  nivelRecomendado NivelIdioma?
+  observaciones   String?
+
+  // Evaluador
+  evaluadorId     String?
+  evaluadoPorIA   Boolean     @default(false)
+
+  leads           Lead[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+enum TipoTestNivel {
+  ONLINE_AUTOMATICO
+  PRESENCIAL
+  ORAL
+  COMPLETO
+}
+
+enum EstadoTest {
+  PENDIENTE
+  EN_PROGRESO
+  COMPLETADO
+  EVALUADO
+  CANCELADO
+}
+
+model Evaluacion {
+  id              String          @id @default(cuid())
+  alumnoId        String
+  alumno          Alumno          @relation(fields: [alumnoId], references: [id])
+  profesorId      String
+  profesor        Profesor        @relation(fields: [profesorId], references: [id])
+
+  tipo            TipoEvaluacion
+  periodo         String          // "Q1 2026", "Parcial 1"
+
+  // Notas
+  notaGrammar     Decimal?        @db.Decimal(4, 2)
+  notaVocabulary  Decimal?        @db.Decimal(4, 2)
+  notaReading     Decimal?        @db.Decimal(4, 2)
+  notaListening   Decimal?        @db.Decimal(4, 2)
+  notaWriting     Decimal?        @db.Decimal(4, 2)
+  notaSpeaking    Decimal?        @db.Decimal(4, 2)
+  notaFinal       Decimal         @db.Decimal(4, 2)
+
+  // Feedback
+  feedback        String?
+  puntosFuertes   String[]
+  areasmejorar    String[]
+
+  // IA
+  generadoPorIA   Boolean         @default(false)
+
+  createdAt       DateTime        @default(now())
+}
+
+enum TipoEvaluacion {
+  CONTINUA
+  PARCIAL
+  FINAL
+  SIMULACRO
+  OFICIAL
+}
+
+model Certificado {
+  id              String      @id @default(cuid())
+  alumnoId        String
+  alumno          Alumno      @relation(fields: [alumnoId], references: [id])
+
+  tipo            TipoCertificado
+  nombre          String
+  descripcion     String?
+
+  // Datos certificación
+  nivel           NivelIdioma?
+  idioma          String
+  fechaEmision    DateTime
+  fechaExpiracion DateTime?
+
+  // Documento
+  codigoVerificacion String @unique
+  documentoUrl    String?
+
+  // Examen oficial
+  entidadCertificadora String?
+  numeroRegistro  String?
+
+  createdAt       DateTime    @default(now())
+}
+
+enum TipoCertificado {
+  ASISTENCIA
+  APROVECHAMIENTO
+  NIVEL_INTERNO
+  CAMBRIDGE
+  TRINITY
+  OXFORD
+  OTRO_OFICIAL
+}
+
+// ============================================
+// MÓDULO MATRICULACIÓN Y FINANZAS
+// ============================================
+
+model Matricula {
+  id              String          @id @default(cuid())
+  codigo          String          @unique
+  alumnoId        String
+  alumno          Alumno          @relation(fields: [alumnoId], references: [id])
+  cursoId         String
+  curso           Curso           @relation(fields: [cursoId], references: [id])
+  sedeId          String
+  sede            Sede            @relation(fields: [sedeId], references: [id])
+
+  // Fechas
+  fechaMatricula  DateTime        @default(now())
+  fechaInicio     DateTime
+  fechaFin        DateTime?
+
+  // Estado
+  estado          EstadoMatricula @default(PENDIENTE_PAGO)
+
+  // Económico
+  importeBase     Decimal         @db.Decimal(10, 2)
+  descuento       Decimal         @default(0) @db.Decimal(10, 2)
+  importeFinal    Decimal         @db.Decimal(10, 2)
+  formaPago       FormaPago
+  cuotas          Int             @default(1)
+
+  // Fundae
+  esFundae        Boolean         @default(false)
+  empresaFundaeId String?
+  empresaFundae   Empresa?        @relation(fields: [empresaFundaeId], references: [id])
+
+  // Documentos
+  contratoUrl     String?
+  rgpdFirmado     Boolean         @default(false)
+
+  // Facturación
+  facturas        Factura[]
+  pagos           Pago[]
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+enum EstadoMatricula {
+  PENDIENTE_PAGO
+  ACTIVA
+  COMPLETADA
+  BAJA_VOLUNTARIA
+  BAJA_IMPAGO
+  CANCELADA
+}
+
+enum FormaPago {
+  CONTADO
+  MENSUAL
+  TRIMESTRAL
+  DOMICILIACION
+  FUNDAE
+}
+
+model Factura {
+  id              String          @id @default(cuid())
+  numero          String          @unique
+  serie           String
+
+  // Cliente
+  alumnoId        String?
+  alumno          Alumno?         @relation(fields: [alumnoId], references: [id])
+  empresaId       String?
+  empresa         Empresa?        @relation(fields: [empresaId], references: [id])
+
+  // Datos fiscales
+  nombreFiscal    String
+  nif             String
+  direccionFiscal String
+
+  // Matrícula relacionada
+  matriculaId     String?
+  matricula       Matricula?      @relation(fields: [matriculaId], references: [id])
+  sedeId          String
+  sede            Sede            @relation(fields: [sedeId], references: [id])
+
+  // Importes
+  baseImponible   Decimal         @db.Decimal(10, 2)
+  tipoIVA         Decimal         @db.Decimal(4, 2)
+  importeIVA      Decimal         @db.Decimal(10, 2)
+  total           Decimal         @db.Decimal(10, 2)
+
+  // Líneas
+  lineas          LineaFactura[]
+
+  // Estado
+  estado          EstadoFactura   @default(EMITIDA)
+  fechaEmision    DateTime        @default(now())
+  fechaVencimiento DateTime
+  fechaCobro      DateTime?
+
+  // Documento
+  pdfUrl          String?
+  enviadaEmail    Boolean         @default(false)
+
+  // Pagos
+  pagos           Pago[]
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([estado])
+  @@index([fechaVencimiento])
+}
+
+model LineaFactura {
+  id          String    @id @default(cuid())
+  facturaId   String
+  factura     Factura   @relation(fields: [facturaId], references: [id])
+  descripcion String
+  cantidad    Int       @default(1)
+  precioUnit  Decimal   @db.Decimal(10, 2)
+  descuento   Decimal   @default(0) @db.Decimal(5, 2)
+  importe     Decimal   @db.Decimal(10, 2)
+}
+
+enum EstadoFactura {
+  BORRADOR
+  EMITIDA
+  ENVIADA
+  COBRADA
+  PARCIAL
+  VENCIDA
+  ANULADA
+}
+
+model Pago {
+  id              String      @id @default(cuid())
+  facturaId       String?
+  factura         Factura?    @relation(fields: [facturaId], references: [id])
+  matriculaId     String?
+  matricula       Matricula?  @relation(fields: [matriculaId], references: [id])
+  alumnoId        String?
+  alumno          Alumno?     @relation(fields: [alumnoId], references: [id])
+
+  importe         Decimal     @db.Decimal(10, 2)
+  metodoPago      MetodoPago
+  referencia      String?
+
+  estado          EstadoPago  @default(PENDIENTE)
+  fechaPago       DateTime?
+  fechaDevolucion DateTime?
+  motivoDevolucion String?
+
+  // Domiciliación
+  remesaId        String?
+  remesa          Remesa?     @relation(fields: [remesaId], references: [id])
+
+  createdAt       DateTime    @default(now())
+}
+
+enum MetodoPago {
+  TARJETA
+  TRANSFERENCIA
+  DOMICILIACION
+  EFECTIVO
+  BIZUM
+}
+
+enum EstadoPago {
+  PENDIENTE
+  PROCESANDO
+  COMPLETADO
+  FALLIDO
+  DEVUELTO
+}
+
+model Remesa {
+  id              String      @id @default(cuid())
+  codigo          String      @unique
+  fechaGeneracion DateTime    @default(now())
+  fechaCargo      DateTime
+  importeTotal    Decimal     @db.Decimal(12, 2)
+  numRecibos      Int
+
+  estado          EstadoRemesa @default(GENERADA)
+  archivoSepa     String?
+
+  pagos           Pago[]
+
+  createdAt       DateTime    @default(now())
+}
+
+enum EstadoRemesa {
+  GENERADA
+  ENVIADA
+  PROCESADA
+  PARCIAL
+  RECHAZADA
+}
+
+model Empresa {
+  id              String      @id @default(cuid())
+  razonSocial     String
+  nombreComercial String?
+  nif             String      @unique
+  direccion       String
+  ciudad          String
+  codigoPostal    String
+
+  // Contacto
+  contactoNombre  String
+  contactoEmail   String
+  contactoTelefono String
+
+  // Fundae
+  fundaeActivo    Boolean     @default(false)
+  creditoFundae   Decimal?    @db.Decimal(10, 2)
+
+  // Relaciones
+  alumnos         Alumno[]
+  matriculas      Matricula[]
+  facturas        Factura[]
+  accionesFundae  AccionFundae[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model AccionFundae {
+  id                  String          @id @default(cuid())
+  empresaId           String
+  empresa             Empresa         @relation(fields: [empresaId], references: [id])
+
+  codigoAccion        String          @unique
+  nombreAccion        String
+  modalidad           ModalidadFundae
+
+  fechaInicio         DateTime
+  fechaFin            DateTime
+  horasFormacion      Int
+
+  // Económico
+  costeFormacion      Decimal         @db.Decimal(10, 2)
+  bonificacionMax     Decimal         @db.Decimal(10, 2)
+  bonificacionAplicada Decimal?       @db.Decimal(10, 2)
+
+  // Estado
+  estado              EstadoFundae    @default(PLANIFICADA)
+
+  // Documentación
+  acuerdoAnexo        String?
+  actaInicio          String?
+  actaFin             String?
+  cuestionarios       String?
+
+  participantes       ParticipanteFundae[]
+
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
+
+enum ModalidadFundae {
+  PRESENCIAL
+  TELEFORMACION
+  MIXTA
+}
+
+enum EstadoFundae {
+  PLANIFICADA
+  COMUNICADA
+  EN_CURSO
+  FINALIZADA
+  BONIFICADA
+  INCIDENCIA
+}
+
+model ParticipanteFundae {
+  id              String        @id @default(cuid())
+  accionId        String
+  accion          AccionFundae  @relation(fields: [accionId], references: [id])
+
+  nombre          String
+  dni             String
+  email           String
+
+  horasRealizadas Int           @default(0)
+  porcentajeAsistencia Decimal  @db.Decimal(5, 2)
+  encuestaCompletada Boolean    @default(false)
+
+  estado          EstadoParticipante @default(ACTIVO)
+}
+
+enum EstadoParticipante {
+  ACTIVO
+  BAJA
+  COMPLETADO
+}
+
+// ============================================
+// MÓDULO RRHH
+// ============================================
+
+model Empleado {
+  id              String      @id @default(cuid())
+
+  // Usuario vinculado
+  userId          String      @unique
+  user            User        @relation(fields: [userId], references: [id])
+
+  // Datos laborales
+  codigo          String      @unique
+  sedeId          String
+  sede            Sede        @relation(fields: [sedeId], references: [id])
+  departamento    Departamento
+  puesto          String
+
+  // Contrato
+  tipoContrato    TipoContrato
+  fechaAlta       DateTime
+  fechaBaja       DateTime?
+
+  // Salario
+  salarioBruto    Decimal     @db.Decimal(10, 2)
+
+  // Seguridad Social
+  numSS           String?
+
+  // Relaciones comerciales
+  leadsAsignados  Lead[]      @relation("LeadComercial")
+  propuestas      Propuesta[]
+  tareasComerciales TareaComercial[]
+  interacciones   LeadInteraccion[]
+
+  // RRHH
+  ausencias       Ausencia[]
+  nominas         Nomina[]
+  evaluacionesDesempeno EvaluacionDesempeno[]
+  fichajes        Fichaje[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+enum Departamento {
+  DIRECCION
+  ACADEMICO
+  COMERCIAL
+  ADMINISTRACION
+  ATENCION_CLIENTE
+  IT
+  RRHH
+  OPERACIONES
+  CALIDAD
+}
+
+enum TipoContrato {
+  INDEFINIDO
+  TEMPORAL
+  PRACTICAS
+  FORMACION
+  AUTONOMO
+}
+
+model Ausencia {
+  id              String        @id @default(cuid())
+  empleadoId      String
+  empleado        Empleado      @relation(fields: [empleadoId], references: [id])
+
+  tipo            TipoAusencia
+  fechaInicio     DateTime
+  fechaFin        DateTime
+  dias            Int
+
+  motivo          String?
+  documentoUrl    String?
+
+  estado          EstadoAusencia @default(PENDIENTE)
+  aprobadaPor     String?
+
+  createdAt       DateTime      @default(now())
+}
+
+enum TipoAusencia {
+  VACACIONES
+  BAJA_MEDICA
+  PERMISO_RETRIBUIDO
+  PERMISO_NO_RETRIBUIDO
+  ASUNTOS_PROPIOS
+  OTRO
+}
+
+enum EstadoAusencia {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  CANCELADA
+}
+
+model Nomina {
+  id              String    @id @default(cuid())
+  empleadoId      String
+  empleado        Empleado  @relation(fields: [empleadoId], references: [id])
+
+  periodo         String    // "2026-01"
+
+  // Devengos
+  salarioBase     Decimal   @db.Decimal(10, 2)
+  complementos    Decimal   @default(0) @db.Decimal(10, 2)
+  horasExtra      Decimal   @default(0) @db.Decimal(10, 2)
+  totalDevengado  Decimal   @db.Decimal(10, 2)
+
+  // Deducciones
+  irpf            Decimal   @db.Decimal(10, 2)
+  seguridadSocial Decimal   @db.Decimal(10, 2)
+  otrasDeducciones Decimal  @default(0) @db.Decimal(10, 2)
+  totalDeducciones Decimal  @db.Decimal(10, 2)
+
+  // Neto
+  liquido         Decimal   @db.Decimal(10, 2)
+
+  // Estado
+  estado          EstadoNomina @default(BORRADOR)
+  fechaPago       DateTime?
+
+  pdfUrl          String?
+
+  createdAt       DateTime  @default(now())
+}
+
+enum EstadoNomina {
+  BORRADOR
+  CALCULADA
+  PAGADA
+}
+
+model Fichaje {
+  id          String      @id @default(cuid())
+  empleadoId  String
+  empleado    Empleado    @relation(fields: [empleadoId], references: [id])
+
+  fecha       DateTime    @db.Date
+  horaEntrada DateTime?
+  horaSalida  DateTime?
+  pausaInicio DateTime?
+  pausaFin    DateTime?
+
+  horasTrabajadas Decimal? @db.Decimal(4, 2)
+
+  tipo        TipoFichaje @default(NORMAL)
+  notas       String?
+
+  @@unique([empleadoId, fecha])
+}
+
+enum TipoFichaje {
+  NORMAL
+  REMOTO
+  GUARDIA
+}
+
+model EvaluacionDesempeno {
+  id              String    @id @default(cuid())
+  empleadoId      String
+  empleado        Empleado  @relation(fields: [empleadoId], references: [id])
+  profesorId      String?
+  profesor        Profesor? @relation(fields: [profesorId], references: [id])
+
+  periodo         String
+  fecha           DateTime
+
+  // Puntuaciones (1-5)
+  competenciasTecnicas Decimal @db.Decimal(3, 2)
+  competenciasTransversales Decimal @db.Decimal(3, 2)
+  cumplimientoObjetivos Decimal @db.Decimal(3, 2)
+  puntuacionGlobal Decimal @db.Decimal(3, 2)
+
+  // Feedback
+  fortalezas      String[]
+  areasmejorar    String[]
+  objetivosProximo String[]
+  comentarios     String?
+
+  evaluadorId     String
+
+  createdAt       DateTime  @default(now())
+}
+
+// ============================================
+// MÓDULO ATENCIÓN AL CLIENTE
+// ============================================
+
+model Ticket {
+  id              String        @id @default(cuid())
+  codigo          String        @unique
+
+  // Solicitante
+  tipo            TipoSolicitante
+  alumnoId        String?
+  empresaId       String?
+  email           String
+  telefono        String?
+
+  // Ticket
+  asunto          String
+  descripcion     String
+  categoria       CategoriaTicket
+  prioridad       Prioridad     @default(MEDIA)
+
+  // Asignación
+  departamento    Departamento
+  asignadoId      String?
+
+  // Estado
+  estado          EstadoTicket  @default(ABIERTO)
+
+  // Resolución
+  resolucion      String?
+  tiempoRespuesta Int?          // minutos
+  tiempoResolucion Int?         // minutos
+
+  // Satisfacción
+  encuestaSatisfaccion Int?     // 1-5
+
+  // Mensajes
+  mensajes        TicketMensaje[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  cerradoEn       DateTime?
+
+  @@index([estado, departamento])
+}
+
+enum TipoSolicitante {
+  ALUMNO
+  FAMILIAR
+  EMPRESA
+  LEAD
+  ANONIMO
+}
+
+enum CategoriaTicket {
+  ACADEMICO
+  FACTURACION
+  HORARIOS
+  INCIDENCIA_TECNICA
+  QUEJA
+  SUGERENCIA
+  INFORMACION
+  BAJA
+  OTRO
+}
+
+enum EstadoTicket {
+  ABIERTO
+  EN_PROGRESO
+  PENDIENTE_CLIENTE
+  PENDIENTE_INTERNO
+  RESUELTO
+  CERRADO
+}
+
+model TicketMensaje {
+  id          String    @id @default(cuid())
+  ticketId    String
+  ticket      Ticket    @relation(fields: [ticketId], references: [id])
+
+  autor       String
+  esInterno   Boolean   @default(false)
+  mensaje     String
+  adjuntos    String[]
+
+  enviadoPorIA Boolean  @default(false)
+
+  createdAt   DateTime  @default(now())
+}
+
+model Cita {
+  id              String      @id @default(cuid())
+
+  // Solicitante
+  nombre          String
+  email           String
+  telefono        String?
+  alumnoId        String?
+
+  // Cita
+  motivo          MotivoCita
+  descripcion     String?
+
+  // Fecha
+  fecha           DateTime
+  duracionMinutos Int         @default(30)
+
+  // Asignación
+  sedeId          String?
+  empleadoId      String?
+
+  // Estado
+  estado          EstadoCita  @default(PENDIENTE)
+  notas           String?
+
+  // Recordatorios
+  recordatorioEnviado Boolean @default(false)
+
+  createdAt       DateTime    @default(now())
+}
+
+enum MotivoCita {
+  INFORMACION
+  TEST_NIVEL
+  ENTREVISTA
+  TUTORIA
+  RECLAMACION
+  OTRO
+}
+
+enum EstadoCita {
+  PENDIENTE
+  CONFIRMADA
+  COMPLETADA
+  CANCELADA
+  NO_SHOW
+}
+
+model Encuesta {
+  id              String              @id @default(cuid())
+  nombre          String
+  descripcion     String?
+  tipo            TipoEncuesta
+
+  // Configuración
+  preguntas       EncuestaPregunta[]
+  activa          Boolean             @default(true)
+
+  // Disparador
+  disparadorEvento String?            // "MATRICULA", "FIN_CURSO", "POST_CLASE"
+  diasDespues     Int?
+
+  respuestas      EncuestaRespuesta[]
+
+  createdAt       DateTime            @default(now())
+}
+
+enum TipoEncuesta {
+  SATISFACCION
+  NPS
+  ONBOARDING
+  FIN_CURSO
+  PROFESOR
+  CLIMA_LABORAL
+}
+
+model EncuestaPregunta {
+  id          String        @id @default(cuid())
+  encuestaId  String
+  encuesta    Encuesta      @relation(fields: [encuestaId], references: [id])
+
+  orden       Int
+  texto       String
+  tipo        TipoPregunta
+  opciones    String[]      // Para tipo SELECCION
+  obligatoria Boolean       @default(true)
+}
+
+enum TipoPregunta {
+  TEXTO
+  NUMERO
+  ESCALA
+  SELECCION
+  NPS
+}
+
+model EncuestaRespuesta {
+  id          String    @id @default(cuid())
+  encuestaId  String
+  encuesta    Encuesta  @relation(fields: [encuestaId], references: [id])
+  alumnoId    String?
+  alumno      Alumno?   @relation(fields: [alumnoId], references: [id])
+
+  respuestas  Json      // {"pregunta_id": "respuesta"}
+  nps         Int?
+
+  createdAt   DateTime  @default(now())
+}
+
+// ============================================
+// MÓDULO OPERACIONES
+// ============================================
+
+model ReservaAula {
+  id          String    @id @default(cuid())
+  aulaId      String
+  aula        Aula      @relation(fields: [aulaId], references: [id])
+
+  fecha       DateTime
+  horaInicio  String
+  horaFin     String
+
+  motivo      String
+  solicitante String
+
+  estado      EstadoReserva @default(PENDIENTE)
+
+  createdAt   DateTime  @default(now())
+}
+
+enum EstadoReserva {
+  PENDIENTE
+  CONFIRMADA
+  CANCELADA
+}
+
+model InventarioItem {
+  id          String    @id @default(cuid())
+  sedeId      String
+  sede        Sede      @relation(fields: [sedeId], references: [id])
+
+  codigo      String
+  nombre      String
+  categoria   CategoriaInventario
+  cantidad    Int       @default(0)
+  minimo      Int       @default(0)
+  ubicacion   String?
+
+  // Movimientos
+  movimientos MovimientoInventario[]
+
+  @@unique([sedeId, codigo])
+}
+
+enum CategoriaInventario {
+  MATERIAL_DIDACTICO
+  MOBILIARIO
+  ELECTRONICA
+  OFICINA
+  LIMPIEZA
+  OTRO
+}
+
+model MovimientoInventario {
+  id          String    @id @default(cuid())
+  itemId      String
+  item        InventarioItem @relation(fields: [itemId], references: [id])
+
+  tipo        TipoMovimiento
+  cantidad    Int
+  motivo      String?
+
+  createdAt   DateTime  @default(now())
+}
+
+enum TipoMovimiento {
+  ENTRADA
+  SALIDA
+  AJUSTE
+}
+
+// ============================================
+// MICROSLACK - COMUNICACIÓN INTERNA
+// ============================================
+
+model SlackChannel {
+  id          String    @id @default(cuid())
+  nombre      String
+  descripcion String?
+  tipo        TipoCanal
+
+  // Privacidad
+  esPrivado   Boolean   @default(false)
+
+  // Miembros
+  miembros    SlackChannelMember[]
+  mensajes    SlackMessage[]
+
+  createdAt   DateTime  @default(now())
+
+  @@unique([nombre])
+}
+
+enum TipoCanal {
+  GENERAL
+  DEPARTAMENTO
+  SEDE
+  PROYECTO
+  ANUNCIOS
+}
+
+model SlackChannelMember {
+  id          String        @id @default(cuid())
+  channelId   String
+  channel     SlackChannel  @relation(fields: [channelId], references: [id])
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+
+  rol         RolCanal      @default(MIEMBRO)
+  silenciado  Boolean       @default(false)
+
+  joinedAt    DateTime      @default(now())
+
+  @@unique([channelId, userId])
+}
+
+enum RolCanal {
+  ADMIN
+  MIEMBRO
+}
+
+model SlackMessage {
+  id          String        @id @default(cuid())
+  channelId   String
+  channel     SlackChannel  @relation(fields: [channelId], references: [id])
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+
+  contenido   String
+  adjuntos    String[]
+
+  // Threading
+  parentId    String?
+  parent      SlackMessage? @relation("MessageThread", fields: [parentId], references: [id])
+  replies     SlackMessage[] @relation("MessageThread")
+
+  // Reacciones
+  reacciones  Json?         // {"emoji": ["userId1", "userId2"]}
+
+  editado     Boolean       @default(false)
+  eliminado   Boolean       @default(false)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([channelId, createdAt])
+}
+
+model DirectMessage {
+  id          String    @id @default(cuid())
+  senderId    String
+  sender      User      @relation("sender", fields: [senderId], references: [id])
+  receiverId  String
+  receiver    User      @relation("receiver", fields: [receiverId], references: [id])
+
+  contenido   String
+  adjuntos    String[]
+
+  leido       Boolean   @default(false)
+  leidoEn     DateTime?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([senderId, receiverId, createdAt])
+}
+
+// ============================================
+// SISTEMA: NOTIFICACIONES Y AUDITORÍA
+// ============================================
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+
+  tipo        TipoNotificacion
+  titulo      String
+  mensaje     String
+  link        String?
+
+  leida       Boolean           @default(false)
+  leidaEn     DateTime?
+
+  createdAt   DateTime          @default(now())
+
+  @@index([userId, leida])
+}
+
+enum TipoNotificacion {
+  INFO
+  ALERTA
+  TAREA
+  MENSAJE
+  SISTEMA
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+
+  accion      String
+  entidad     String
+  entidadId   String
+  datosAntes  Json?
+  datosDespues Json?
+
+  ip          String?
+  userAgent   String?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([entidad, entidadId])
+  @@index([userId])
+}
+
+// ============================================
+// AGENTES IA
+// ============================================
+
+model AgentExecution {
+  id          String        @id @default(cuid())
+
+  agenteNombre String
+  tarea       String
+  input       Json
+  output      Json?
+
+  estado      EstadoAgente  @default(INICIADO)
+  error       String?
+
+  duracionMs  Int?
+  tokensUsados Int?
+
+  // Aprobación humana (para A2)
+  requiereAprobacion Boolean @default(false)
+  aprobadoPor String?
+  aprobadoEn  DateTime?
+
+  createdAt   DateTime      @default(now())
+  completadoEn DateTime?
+
+  @@index([agenteNombre, estado])
+}
+
+enum EstadoAgente {
+  INICIADO
+  EN_PROGRESO
+  PENDIENTE_APROBACION
+  COMPLETADO
+  ERROR
+  CANCELADO
+}
+
+model AgentConfig {
+  id              String    @id @default(cuid())
+  nombre          String    @unique
+  descripcion     String
+
+  // Configuración
+  scoreIA         ScoreIA
+  activo          Boolean   @default(true)
+
+  // Modelo
+  modelo          String    @default("claude-sonnet-4-20250514")
+  temperatura     Decimal   @default(0.7) @db.Decimal(2, 1)
+  maxTokens       Int       @default(4096)
+
+  // Prompts
+  systemPrompt    String
+
+  // Límites
+  maxEjecucionesDia Int?
+  timeoutMs       Int       @default(30000)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+enum ScoreIA {
+  A0  // No agentizable
+  A1  // Soporte IA (copiloto)
+  A2  // IA + humano en el loop
+  A3  // IA autónoma
+}
