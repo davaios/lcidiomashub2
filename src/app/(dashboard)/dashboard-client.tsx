@@ -223,7 +223,7 @@ export function DashboardClient({
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="mes" stroke="#9ca3af" fontSize={12} />
                 <YAxis stroke="#9ca3af" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} />
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                 <Bar dataKey="facturado" fill="#8b5cf6" name="Facturado" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="cobrado" fill="#22c55e" name="Cobrado" radius={[4, 4, 0, 0]} />
               </BarChart>
