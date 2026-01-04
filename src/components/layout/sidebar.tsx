@@ -58,6 +58,7 @@ const navigation: NavItem[] = [
     children: [
       { title: "Alumnos", href: "/academico/alumnos", icon: Users },
       { title: "Profesores", href: "/academico/profesores", icon: UserCog },
+      { title: "Cursos", href: "/academico/cursos", icon: BookOpen },
       { title: "Grupos", href: "/academico/grupos", icon: BookOpen },
       { title: "Horarios", href: "/academico/horarios", icon: Calendar },
       { title: "Tests Nivel", href: "/academico/tests", icon: ClipboardList },
@@ -105,18 +106,30 @@ const navigation: NavItem[] = [
     children: [
       { title: "Tickets", href: "/atencion/tickets", icon: MessageSquare },
       { title: "Citas", href: "/atencion/citas", icon: Calendar },
-      { title: "Encuestas", href: "/atencion/encuestas", icon: ClipboardList },
     ],
+  },
+  {
+    title: "Comunicacion",
+    href: "/comunicacion",
+    icon: MessageSquare,
   },
   {
     title: "Calidad",
     href: "/calidad",
     icon: ClipboardList,
+    children: [
+      { title: "Encuestas", href: "/calidad/encuestas", icon: ClipboardList },
+      { title: "Reportes", href: "/calidad/reportes", icon: FileText },
+    ],
   },
   {
     title: "Direccion",
     href: "/direccion",
     icon: BarChart3,
+    children: [
+      { title: "KPIs", href: "/direccion/kpis", icon: BarChart3 },
+      { title: "Informes", href: "/direccion/informes", icon: FileText },
+    ],
   },
 ]
 
